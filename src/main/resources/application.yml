@@ -1,0 +1,27 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: redis-cache-demo
+
+  datasource:
+    url: ${db-url}
+    username: ${db-user-name}
+    password: ${db-user-pass}
+
+  jpa:
+    database-platform: org.hibernate.dialect.MySQLDialect
+
+  data:
+    redis:
+      host: localhost
+      port: 6379
+      timeout: 2000ms
+
+  cache:
+    type: redis
+
+logging:
+  level:
+    com.example.rediscache: DEBUG
