@@ -1,0 +1,254 @@
+{
+  "info": {
+    "name": "Redis Cache Demo",
+    "description": "All APIs of the redis-cache-demo Spring Boot project. Run the folder 'Cache flow' in order to see caching in action (check response time of the 1st vs 2nd GET).",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:8080" },
+    { "key": "productId", "value": "1" }
+  ],
+  "item": [
+    {
+      "name": "Products CRUD",
+      "item": [
+        {
+          "name": "Get all products",
+          "event": [{
+            "listen": "test",
+            "script": { "type": "text/javascript", "exec": [
+              "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+              "pm.test('Returns an array', () => pm.expect(pm.response.json()).to.be.an('array'));"
+            ]}
+          }],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/api/products", "host": ["{{baseUrl}}"], "path": ["api", "products"] },
+            "description": "Cached in Redis as demo::productList::all (TTL 2 min). Evicted on create/update/delete."
+          }
+        },
+        {
+          "name": "Get product by id",
+          "event": [{
+            "listen": "test",
+            "script": { "type": "text/javascript", "exec": [
+              "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+              "pm.test('Has id and name', () => {",
+              "  const body = pm.response.json();",
+              "  pm.expect(body).to.have.property('id');",
+              "  pm.expect(body).to.have.property('name');",
+              "});",
+              "console.log('Response time: ' + pm.response.responseTime + ' ms');"
+            ]}
+          }],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/api/products/{{productId}}", "host": ["{{baseUrl}}"], "path": ["api", "products", "{{productId}}"] },
+            "description": "Cached in Redis as demo::products::{id} (TTL 30 min). First call ~1.5s (DB), next calls instant (Redis)."
+          }
+        },
+        {
+          "name": "Create product",
+          "event": [{
+            "listen": "test",
+            "script": { "type": "text/javascript", "exec": [
+              "pm.test('Status is 201', () => pm.response.to.have.status(201));",
+              "const body = pm.response.json();",
+              "pm.test('Has generated id', () => pm.expect(body.id).to.be.a('number'));",
+              "pm.collectionVariables.set('productId', body.id);"
+            ]}
+          }],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Mouse\",\n  \"description\": \"Wireless mouse\",\n  \"price\": 25.00\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{baseUrl}}/api/products", "host": ["{{baseUrl}}"], "path": ["api", "products"] },
+            "description": "Creates a product and evicts the cached list. Saves the new id into the productId variable."
+          }
+        },
+        {
+          "name": "Update product",
+          "event": [{
+            "listen": "test",
+            "script": { "type": "text/javascript", "exec": [
+              "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+              "pm.test('Name updated', () => pm.expect(pm.response.json().name).to.eql('Laptop Pro'));"
+            ]}
+          }],
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Laptop Pro\",\n  \"description\": \"16-inch developer laptop\",\n  \"price\": 1499.00\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{baseUrl}}/api/products/{{productId}}", "host": ["{{baseUrl}}"], "path": ["api", "products", "{{productId}}"] },
+            "description": "@CachePut refreshes demo::products::{id}; list cache is evicted."
+          }
+        },
+        {
+          "name": "Delete product",
+          "event": [{
+            "listen": "test",
+            "script": { "type": "text/javascript", "exec": [
+              "pm.test('Status is 204', () => pm.response.to.have.status(204));"
+            ]}
+          }],
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/api/products/{{productId}}", "host": ["{{baseUrl}}"], "path": ["api", "products", "{{productId}}"] },
+            "description": "Evicts demo::products::{id} and the list cache."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Cache flow (run in order)",
+      "item": [
+        {
+          "name": "1. GET product 2 - cache MISS (slow ~1.5s)",
+          "event": [{
+            "listen": "test",
+            "script": { "type": "text/javascript", "exec": [
+              "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+              "pm.collectionVariables.set('firstCallMs', pm.response.responseTime);",
+              "console.log('MISS response time: ' + pm.response.responseTime + ' ms');"
+            ]}
+          }],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/api/products/2", "host": ["{{baseUrl}}"], "path": ["api", "products", "2"] }
+          }
+        },
+        {
+          "name": "2. GET product 2 - cache HIT (fast)",
+          "event": [{
+            "listen": "test",
+            "script": { "type": "text/javascript", "exec": [
+              "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+              "pm.test('Served from cache (faster than the first call)', () => {",
+              "  const first = Number(pm.collectionVariables.get('firstCallMs'));",
+              "  pm.expect(pm.response.responseTime).to.be.below(first);",
+              "});",
+              "console.log('HIT response time: ' + pm.response.responseTime + ' ms');"
+            ]}
+          }],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/api/products/2", "host": ["{{baseUrl}}"], "path": ["api", "products", "2"] }
+          }
+        },
+        {
+          "name": "3. PUT product 2 - refresh cache",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Keyboard Pro\",\n  \"description\": \"Mechanical keyboard v2\",\n  \"price\": 119.00\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{baseUrl}}/api/products/2", "host": ["{{baseUrl}}"], "path": ["api", "products", "2"] }
+          }
+        },
+        {
+          "name": "4. GET product 2 - fast, returns updated value",
+          "event": [{
+            "listen": "test",
+            "script": { "type": "text/javascript", "exec": [
+              "pm.test('Cache holds the updated value', () => pm.expect(pm.response.json().name).to.eql('Keyboard Pro'));",
+              "pm.test('Fast (no DB call)', () => pm.expect(pm.response.responseTime).to.be.below(1000));"
+            ]}
+          }],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/api/products/2", "host": ["{{baseUrl}}"], "path": ["api", "products", "2"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Error cases",
+      "item": [
+        {
+          "name": "Get product - not found (404)",
+          "event": [{
+            "listen": "test",
+            "script": { "type": "text/javascript", "exec": [
+              "pm.test('Status is 404', () => pm.response.to.have.status(404));"
+            ]}
+          }],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/api/products/9999", "host": ["{{baseUrl}}"], "path": ["api", "products", "9999"] }
+          }
+        },
+        {
+          "name": "Create product - validation error (400)",
+          "event": [{
+            "listen": "test",
+            "script": { "type": "text/javascript", "exec": [
+              "pm.test('Status is 400', () => pm.response.to.have.status(400));"
+            ]}
+          }],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"\",\n  \"price\": -5\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{baseUrl}}/api/products", "host": ["{{baseUrl}}"], "path": ["api", "products"] },
+            "description": "Blank name and negative price fail @NotBlank / @DecimalMin."
+          }
+        },
+        {
+          "name": "Update product - not found (404)",
+          "event": [{
+            "listen": "test",
+            "script": { "type": "text/javascript", "exec": [
+              "pm.test('Status is 404', () => pm.response.to.have.status(404));"
+            ]}
+          }],
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Ghost\",\n  \"description\": \"does not exist\",\n  \"price\": 10.00\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{baseUrl}}/api/products/9999", "host": ["{{baseUrl}}"], "path": ["api", "products", "9999"] }
+          }
+        },
+        {
+          "name": "Delete product - not found (404)",
+          "event": [{
+            "listen": "test",
+            "script": { "type": "text/javascript", "exec": [
+              "pm.test('Status is 404', () => pm.response.to.have.status(404));"
+            ]}
+          }],
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/api/products/9999", "host": ["{{baseUrl}}"], "path": ["api", "products", "9999"] }
+          }
+        }
+      ]
+    }
+  ]
+}
