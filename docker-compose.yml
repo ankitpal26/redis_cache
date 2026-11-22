@@ -1,6 +1,42 @@
 services:
+  mysql:
+    image: mysql:8
+    container_name: redis-cache-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: root123      # demo only, change for real use
+      MYSQL_DATABASE: demo
+    ports:
+      - "3307:3306"                     # 3307 on your PC so it does not clash with a local MySQL
+    volumes:
+      - mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-proot123"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
   redis:
     image: redis:7
     container_name: redis-cache-demo
     ports:
       - "6379:6379"
+
+  app:
+    build: .
+    container_name: redis-cache-app
+    ports:
+      - "8080:8080"
+    environment:
+      DB_URL: jdbc:mysql://mysql:3306/demo
+      DB_USER_NAME: root
+      DB_USER_PASS: root123
+      SPRING_DATA_REDIS_HOST: redis
+      SPRING_JPA_HIBERNATE_DDL_AUTO: update   # creates the product table automatically
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_started
+
+volumes:
+  mysql-data:
